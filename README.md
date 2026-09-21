@@ -32,3 +32,4 @@ A [arquitetura](docs/ARQUITETURA.md) descreve páginas, componentes, modelo de d
 - Sobras mensais voltam a ficar por distribuir.
 - Autenticação, persistência por utilizador e controlo de concorrência.
 - Design responsivo, acessibilidade por teclado, modo escuro e sons opcionais.
+# Ledgerv2
