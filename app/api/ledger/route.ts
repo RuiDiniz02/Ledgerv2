@@ -1,4 +1,3 @@
-import { getChatGPTUser } from "../../chatgpt-auth";
 import { ledgerDb } from "../../../db/ledger";
 import {
   currentMonth,
@@ -11,22 +10,39 @@ export const dynamic = "force-dynamic";
 const reply = (body: unknown, status = 200) =>
   Response.json(body, {
     status,
-    headers: { "Cache-Control": "private, no-store", Vary: "Cookie" },
+    headers: { "Cache-Control": "private, no-store", Vary: "Authorization" },
   });
-type Row = { document: string; revision: number };
-export async function GET() {
-  const user = await getChatGPTUser();
-  if (!user) return reply({ error: "Entra na tua conta para continuar." }, 401);
+async function identify(request: Request) {
+  const authorization = request.headers.get("authorization");
+  if (!authorization?.startsWith("Bearer ") || authorization.length > 12000)
+    return null;
+  const db = ledgerDb(authorization);
+  const { data, error } = await db.auth.getUser(authorization.slice(7));
+  if (error) {
+    if (error.status && error.status >= 500) throw error;
+    return null;
+  }
+  return data.user ? { db, user: data.user } : null;
+}
+export async function GET(request: Request) {
   try {
-    const row = await ledgerDb()
-      .prepare(
-        "SELECT document,revision FROM ledger_accounts WHERE user_id = ?",
-      )
-      .bind(user.userId)
-      .first<Row>();
-    if (!row) return reply({ state: null, revision: 0 });
-    const state = rollMonths(JSON.parse(row.document), currentMonth());
-    return reply({ state, revision: row.revision });
+    const auth = await identify(request);
+    if (!auth)
+      return reply({ error: "Entra na tua conta para continuar." }, 401);
+    const { data: row, error } = await auth.db
+      .from("ledger_accounts")
+      .select("document,revision")
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+    if (error) throw error;
+    return reply(
+      row
+        ? {
+            state: rollMonths(row.document as LedgerState, currentMonth()),
+            revision: row.revision,
+          }
+        : { state: null, revision: 0 },
+    );
   } catch (e) {
     console.error("Ledger read failed", e);
     return reply(
@@ -36,47 +52,50 @@ export async function GET() {
   }
 }
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
-  if (!user) return reply({ error: "A sessão terminou. Volta a entrar." }, 401);
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin)
     return reply({ error: "Pedido não autorizado." }, 403);
   if (!request.headers.get("content-type")?.includes("application/json"))
     return reply({ error: "Pedido inválido." }, 415);
-  let raw: any;
   try {
-    const body = await request.text();
-    if (body.length > 24000)
-      return reply({ error: "Pedido demasiado grande." }, 413);
-    raw = JSON.parse(body);
-    if (!raw || typeof raw !== "object") throw new Error();
-  } catch {
-    return reply({ error: "Pedido inválido." }, 400);
-  }
-  try {
-    const db = ledgerDb();
-    const row = await db
-      .prepare(
-        "SELECT document,revision FROM ledger_accounts WHERE user_id = ?",
-      )
-      .bind(user.userId)
-      .first<Row>();
+    const auth = await identify(request);
+    if (!auth)
+      return reply({ error: "A sessão terminou. Volta a entrar." }, 401);
+    let raw: any;
+    try {
+      const body = await request.text();
+      if (body.length > 24000)
+        return reply({ error: "Pedido demasiado grande." }, 413);
+      raw = JSON.parse(body);
+      if (!raw || typeof raw !== "object" || Array.isArray(raw))
+        throw new Error();
+    } catch {
+      return reply({ error: "Pedido inválido." }, 400);
+    }
+    const { db, user } = auth;
+    const { data: row, error: readError } = await db
+      .from("ledger_accounts")
+      .select("document,revision")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (readError) throw readError;
     let state: LedgerState;
+    const conflict = () =>
+      reply(
+        {
+          error:
+            "Os dados mudaram noutro separador. Os valores foram atualizados; revê o movimento e tenta novamente.",
+        },
+        409,
+      );
     try {
       if (!row) {
         if (raw.action !== "setup")
           return reply({ error: "Configura primeiro a tua Ledger." }, 400);
         state = setup(raw);
       } else {
-        if (raw.revision !== row.revision)
-          return reply(
-            {
-              error:
-                "Os dados mudaram noutro separador. Atualiza e tenta novamente.",
-            },
-            409,
-          );
-        state = mutate(JSON.parse(row.document), raw);
+        if (raw.revision !== row.revision) return conflict();
+        state = mutate(row.document as LedgerState, raw);
       }
     } catch (e) {
       return reply(
@@ -84,33 +103,29 @@ export async function POST(request: Request) {
         400,
       );
     }
+    const revision = (row?.revision || 0) + 1;
+    const values = {
+      document: state,
+      revision,
+      updated_at: new Date().toISOString(),
+    };
     const result = row
       ? await db
-          .prepare(
-            "UPDATE ledger_accounts SET document=?, revision=revision+1, updated_at=? WHERE user_id=? AND revision=?",
-          )
-          .bind(
-            JSON.stringify(state),
-            new Date().toISOString(),
-            user.userId,
-            row.revision,
-          )
-          .run()
+          .from("ledger_accounts")
+          .update(values)
+          .eq("user_id", user.id)
+          .eq("revision", row.revision)
+          .select("revision")
+          .maybeSingle()
       : await db
-          .prepare(
-            "INSERT OR IGNORE INTO ledger_accounts (user_id,revision,document,updated_at) VALUES (?,1,?,?)",
-          )
-          .bind(user.userId, JSON.stringify(state), new Date().toISOString())
-          .run();
-    if (result.meta.changes !== 1)
-      return reply(
-        {
-          error:
-            "Os dados mudaram noutro separador. Atualiza e tenta novamente.",
-        },
-        409,
-      );
-    return reply({ state, revision: (row?.revision || 0) + 1 });
+          .from("ledger_accounts")
+          .insert({ ...values, user_id: user.id })
+          .select("revision")
+          .maybeSingle();
+    if (result.error?.code === "23505" || (!result.error && !result.data))
+      return conflict();
+    if (result.error) throw result.error;
+    return reply({ state, revision });
   } catch (e) {
     console.error("Ledger write failed", e);
     return reply(

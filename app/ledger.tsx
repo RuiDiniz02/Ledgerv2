@@ -16,7 +16,6 @@ import {
   LayoutDashboard,
   Layers3,
   List,
-  Target,
   Settings,
   Moon,
   Sun,
@@ -33,7 +32,6 @@ import {
   ChevronRight,
   Check,
   CheckCheck,
-  CalendarDays,
   X,
   Volume2,
   Download,
@@ -41,17 +39,17 @@ import {
   Pencil,
   Loader2,
   Trash2,
-  CircleHelp,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect as Select } from "@/components/ui/native-select";
 import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+  Drawer,
+  DrawerContent,
+  DrawerTitle,
+  DrawerDescription,
+} from "@/components/ui/drawer";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
@@ -65,6 +63,11 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
 } from "@/components/ui/sidebar";
+import { createSupabaseClient, authHeaders } from "@/lib/supabase";
+import { Brand as SharedBrand } from "@/components/ledger/brand";
+function Brand() {
+  return <SharedBrand href="#dashboard" />;
+}
 import {
   AlertDialog,
   AlertDialogContent,
@@ -118,22 +121,11 @@ const iconNames = [
   "Carteira",
 ];
 const nav = [
-  ["dashboard", "Dashboard", LayoutDashboard],
-  ["categorias", "Categorias", Layers3],
+  ["dashboard", "Início", LayoutDashboard],
   ["movimentos", "Movimentos", ArrowLeftRight],
-  ["objetivos", "Objetivos", Target],
+  ["categorias", "Envelopes", Layers3],
   ["definicoes", "Definições", Settings],
 ] as const;
-function Brand() {
-  return (
-    <a className="brand" href="#dashboard" aria-label="Ledger — Dashboard">
-      <span className="brand-mark">
-        <Layers3 size={23} />
-      </span>
-      ledger<span className="brand-period">.</span>
-    </a>
-  );
-}
 function CatIcon({
   c,
   small = false,
@@ -149,24 +141,6 @@ function CatIcon({
     >
       <Icon size={small ? 18 : 22} />
     </span>
-  );
-}
-function Bar({
-  value,
-  color,
-  label,
-}: {
-  value: number;
-  color: string;
-  label: string;
-}) {
-  return (
-    <Progress
-      aria-label={label}
-      value={Math.max(0, Math.min(100, value))}
-      className="ledger-progress"
-      style={{ "--cat": color } as CSSProperties}
-    />
   );
 }
 function ErrorText({ error }: { error: string }) {
@@ -217,7 +191,7 @@ type Props = {
 };
 export default function Ledger({
   user = null,
-  signIn = "/signin-with-chatgpt?return_to=%2F",
+  signIn = "/login",
   demo = false,
 }: Props) {
   const [state, setState] = useState<LedgerState | null>(null),
@@ -242,7 +216,11 @@ export default function Ledger({
     setLoading(true);
     setLoadError("");
     try {
-      const r = await fetch("/api/ledger", { cache: "no-store" });
+      const sessionHeaders = await authHeaders();
+      const r = await fetch("/api/ledger", {
+        cache: "no-store",
+        headers: sessionHeaders,
+      });
       const data = (await r.json()) as {
         state: LedgerState | null;
         revision: number;
@@ -330,6 +308,15 @@ export default function Ledger({
     setPage(p);
     window.scrollTo({ top: 0, behavior: "instant" });
   }
+  async function signOut() {
+    try {
+      const { error } = await createSupabaseClient().auth.signOut();
+      if (error) throw error;
+      window.location.replace("/login");
+    } catch {
+      setNotice("Não foi possível terminar a sessão. Tenta novamente.");
+    }
+  }
   async function save(raw: any) {
     if (offline && !demo)
       throw new Error(
@@ -339,9 +326,13 @@ export default function Ledger({
       const next = raw.action === "setup" ? setup(raw) : mutate(state!, raw);
       setState(next);
     } else {
+      const sessionHeaders = await authHeaders();
       const r = await fetch("/api/ledger", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...sessionHeaders,
+        },
         body: JSON.stringify({ ...raw, revision }),
       });
       const data = (await r.json()) as {
@@ -351,7 +342,10 @@ export default function Ledger({
       };
       if (!r.ok) {
         if (r.status === 409) {
-          const fresh = await fetch("/api/ledger", { cache: "no-store" });
+          const fresh = await fetch("/api/ledger", {
+            cache: "no-store",
+            headers: sessionHeaders,
+          });
           if (fresh.ok) {
             const d = (await fresh.json()) as {
               state: LedgerState;
@@ -420,7 +414,7 @@ export default function Ledger({
             </p>
             <Button asChild className="primary">
               <a href={signIn} target="_top">
-                Entrar com ChatGPT <ArrowRight size={18} />
+                Entrar na Ledger <ArrowRight size={18} />
               </a>
             </Button>
             <a className="demo-link" href="/demo">
@@ -495,8 +489,7 @@ export default function Ledger({
         {noticeView}
       </div>
     );
-  const sum = summary(state, month),
-    current = month === currentMonth();
+  const sum = summary(state, month);
   const category = page.startsWith("categoria/")
     ? state.categories.find((c) => c.id === page.split("/")[1])
     : null;
@@ -513,57 +506,6 @@ export default function Ledger({
         b.date.localeCompare(a.date) ||
         state.movements.indexOf(b) - state.movements.indexOf(a),
     );
-  const categoryCard = (c: Category) => {
-    const b = balance(state, c, month),
-      budget = state.months[month]?.allocations[c.id] || 0,
-      target = c.kind === "monthly" ? budget : c.goal;
-    return (
-      <button
-        key={c.id}
-        className="envelope-card"
-        onClick={() => go("categoria/" + c.id)}
-        style={{ "--cat": c.color } as CSSProperties}
-      >
-        <div className="envelope-top">
-          <CatIcon c={c} />
-          <span className="badge">
-            {c.kind === "monthly" ? "Mensal" : "Acumulativa"}
-          </span>
-          <ChevronRight className="card-arrow" size={17} />
-        </div>
-        <h3>{c.name}</h3>
-        <div className="envelope-value">
-          {money(b)}
-          <span>disponíveis</span>
-        </div>
-        <div className="card-progress">
-          {target > 0 ? (
-            <>
-              <Bar
-                value={(b / target) * 100}
-                color={c.color}
-                label={c.name + " — " + money(b) + " de " + money(target)}
-              />
-              <div className="between">
-                <span>
-                  {c.kind === "monthly"
-                    ? `de ${money(target)} este mês`
-                    : `Objetivo: ${money(target)}`}
-                </span>
-                {c.kind === "saving" && (
-                  <b>{Math.round((b / target) * 100)}%</b>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="accumulation">
-              <span className="tiny-dot" /> {money(budget)} reservados este mês
-            </div>
-          )}
-        </div>
-      </button>
-    );
-  };
   return (
     <SidebarProvider style={{ "--sidebar-width": "238px" } as CSSProperties}>
       <div
@@ -630,6 +572,15 @@ export default function Ledger({
           </SidebarFooter>
         </Sidebar>
         <div className="workspace">
+          {demo && (
+            <div className="demo-banner">
+              <span>
+                Estás a explorar dados de exemplo. As alterações não são
+                guardadas.
+              </span>
+              <a href="/login?modo=criar">Criar conta →</a>
+            </div>
+          )}
           <header className="topbar">
             <div className="desktop-breadcrumb">
               O meu espaço <ChevronRight size={14} />
@@ -640,7 +591,7 @@ export default function Ledger({
             </div>
             <div className="topbar-right">
               {demo && (
-                <a className="demo-badge" href="/">
+                <a className="demo-badge" href="/login">
                   Demonstração <ArrowUpRight size={12} />
                 </a>
               )}
@@ -658,266 +609,59 @@ export default function Ledger({
             </div>
           </header>
           <main id="main" tabIndex={-1} ref={mainRef} className="main-content">
-            <div className="page-heading">
-              <div>
-                <span className="eyebrow">
-                  {category
-                    ? "O TEU ENVELOPE"
-                    : page === "dashboard"
-                      ? "CADA EURO, NO SEU LUGAR"
-                      : "O TEU ESPAÇO"}
-                </span>
-                <h1>
-                  {page === "dashboard"
-                    ? "O teu dinheiro, com clareza."
-                    : title}
-                </h1>
-                <p>
-                  {category
-                    ? category.kind === "monthly"
-                      ? "Para o dia a dia, mês após mês."
-                      : "O que guardas hoje, para os planos de amanhã."
-                    : page === "dashboard"
-                      ? "Tudo o que tens. Tudo o que planeias."
-                      : page === "categorias"
-                        ? "Um envelope para cada parte da tua vida."
-                        : page === "movimentos"
-                          ? "Os pequenos movimentos do teu dinheiro."
-                          : page === "objetivos"
-                            ? "Dá espaço aos teus próximos planos."
-                            : "A Ledger, à tua maneira."}
-                </p>
-              </div>
-              {page !== "definicoes" && (
-                <Button
-                  className="primary new-movement"
-                  onClick={() => openMove("expense", category?.id)}
-                >
-                  <Plus size={19} /> Movimento
-                </Button>
-              )}
-            </div>
-            {page !== "definicoes" && (
-              <div className="month-row">
-                <div className="month-picker">
-                  <CalendarDays size={17} />
-                  <Select
-                    aria-label="Mês"
-                    value={month}
-                    onChange={(e) => setMonth(e.target.value)}
-                  >
-                    {Object.keys(state.months)
-                      .sort()
-                      .reverse()
-                      .map((m) => (
-                        <option key={m} value={m}>
-                          {monthName(m)}
-                        </option>
-                      ))}
-                  </Select>
-                </div>
-                <span className="month-status">
-                  {current ? "O teu mês, num olhar" : "Histórico do mês"}
-                </span>
+            {page === "dashboard" && (
+              <MonthSwitch state={state} month={month} setMonth={setMonth} />
+            )}
+            {(page === "categorias" ||
+              page === "movimentos" ||
+              page === "definicoes") && (
+              <div className="app-head">
+                <h1>{title}</h1>
+                {page !== "definicoes" && (
+                  <MonthSwitch
+                    state={state}
+                    month={month}
+                    setMonth={setMonth}
+                    compact
+                  />
+                )}
               </div>
             )}
             {page === "dashboard" && (
-              <>
-                <section className="summary-grid" aria-label="Resumo do mês">
-                  <div className="summary-card available">
-                    <div className="between">
-                      <span>Disponível no total</span>
-                      <Wallet size={21} />
-                    </div>
-                    <strong>{money(sum.available)}</strong>
-                    <span className="summary-foot">
-                      Nos envelopes e por distribuir
-                    </span>
-                  </div>
-                  <div className="summary-card">
-                    <div className="between">
-                      <span>Recebido este mês</span>
-                      <span className="summary-symbol incoming">
-                        <ArrowDownLeft size={19} />
-                      </span>
-                    </div>
-                    <strong>{money(sum.income)}</strong>
-                    <span className="summary-foot">Rendimento e entradas</span>
-                  </div>
-                  <div className="summary-card">
-                    <div className="between">
-                      <span>Gasto este mês</span>
-                      <span className="summary-symbol outgoing">
-                        <ArrowUpRight size={19} />
-                      </span>
-                    </div>
-                    <strong>{money(sum.spent)}</strong>
-                    <span className="summary-foot">
-                      Cada despesa no seu envelope
-                    </span>
-                  </div>
-                </section>
-                <Distribution
-                  state={state}
-                  month={month}
-                  edit={() => go("categorias")}
-                />
-                <div className="section-heading">
-                  <div>
-                    <h2>
-                      Os teus envelopes{" "}
-                      <span className="count">{state.categories.length}</span>
-                    </h2>
-                    <p>Dinheiro separado. Cabeça descansada.</p>
-                  </div>
-                  <Button variant="ghost" onClick={() => go("categorias")}>
-                    Gerir categorias <ArrowRight size={16} />
-                  </Button>
-                </div>
-                <section className="envelope-grid">
-                  {state.categories.map(categoryCard)}
-                </section>
-                <section className="recent panel">
-                  <div className="section-heading">
-                    <h2>Últimos movimentos</h2>
-                    <Button variant="ghost" onClick={() => go("movimentos")}>
-                      Ver todos <ArrowRight size={16} />
-                    </Button>
-                  </div>
-                  <MovementList state={state} movements={recent.slice(0, 4)} />
-                </section>
-              </>
+              <HomeView
+                state={state}
+                month={month}
+                available={sum.available}
+                unassigned={sum.free}
+                recent={recent.slice(0, 4)}
+                go={go}
+                distribute={() => setModal({ type: "income" })}
+              />
             )}
             {page === "categorias" && (
-              <>
-                <Distribution
-                  state={state}
-                  month={month}
-                  edit={() => setModal({ type: "income" })}
-                />
-                <div className="section-heading">
-                  <h2>{state.categories.length} envelopes</h2>
-                  <Button
-                    variant="outline"
-                    onClick={() => setModal({ type: "category" })}
-                  >
-                    <Plus size={17} /> Nova categoria
-                  </Button>
-                </div>
-                <section className="envelope-grid">
-                  {state.categories.map(categoryCard)}
-                </section>
-                <p className="helper">
-                  <CircleHelp size={16} /> As categorias mensais renovam-se. Nas
-                  acumulativas, o dinheiro fica.
-                </p>
-              </>
+              <EnvelopesView
+                state={state}
+                month={month}
+                unassigned={sum.free}
+                go={go}
+                distribute={() => setModal({ type: "income" })}
+                create={() => setModal({ type: "category" })}
+              />
             )}
             {category && (
-              <>
-                <Button
-                  variant="ghost"
-                  className="back"
-                  onClick={() => go("categorias")}
-                >
-                  <ArrowLeft size={16} /> Categorias
-                </Button>
-                <section className="category-detail panel">
-                  <div className="detail-top">
-                    <CatIcon c={category} />
-                    <span className="badge">
-                      {category.kind === "monthly"
-                        ? "Categoria mensal"
-                        : "Categoria acumulativa"}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      onClick={() =>
-                        setModal({ type: "category", id: category.id })
-                      }
-                    >
-                      <Pencil size={16} /> Editar categoria
-                    </Button>
-                  </div>
-                  <p>Saldo disponível</p>
-                  <strong className="detail-value">
-                    {money(balance(state, category, month))}
-                  </strong>
-                  {(category.goal || category.monthly) > 0 && (
-                    <div className="detail-progress">
-                      <div className="between">
-                        <span>
-                          {category.kind === "monthly"
-                            ? `Orçamento mensal: ${money(state.months[month].allocations[category.id] || 0)}`
-                            : category.goalName || "O teu objetivo"}
-                        </span>
-                        <strong>
-                          {category.goal > 0 ? money(category.goal) : ""}
-                        </strong>
-                      </div>
-                      <Bar
-                        color={category.color}
-                        value={
-                          (balance(state, category, month) /
-                            (category.goal ||
-                              state.months[month].allocations[category.id] ||
-                              1)) *
-                          100
-                        }
-                        label="Progresso da categoria"
-                      />
-                      {category.goal > 0 && (
-                        <p>
-                          {Math.round(
-                            (balance(state, category, month) / category.goal) *
-                              100,
-                          )}
-                          % do objetivo ·{" "}
-                          {money(
-                            Math.max(
-                              0,
-                              category.goal - balance(state, category, month),
-                            ),
-                          )}{" "}
-                          para lá chegar
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  <div className="detail-actions">
-                    <Button
-                      className="primary"
-                      onClick={() => openMove("expense", category.id)}
-                    >
-                      <Plus size={17} /> Registar despesa
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => openMove("income", category.id)}
-                    >
-                      <ArrowDownLeft size={17} /> Adicionar dinheiro
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => openMove("transfer", category.id)}
-                    >
-                      <ArrowLeftRight size={17} /> Transferir
-                    </Button>
-                  </div>
-                </section>
-                <section className="recent panel">
-                  <div className="section-heading">
-                    <h2>Movimentos recentes</h2>
-                  </div>
-                  <MovementList
-                    state={state}
-                    movements={recent.filter(
-                      (t) => t.category === category.id || t.to === category.id,
-                    )}
-                    remove={(id) => setModal({ type: "delete", id })}
-                  />
-                </section>
-              </>
+              <CategoryView
+                state={state}
+                c={category}
+                month={month}
+                setMonth={setMonth}
+                movements={recent.filter(
+                  (t) => t.category === category.id || t.to === category.id,
+                )}
+                back={() => go("categorias")}
+                edit={() => setModal({ type: "category", id: category.id })}
+                move={(k) => openMove(k, category.id)}
+                remove={(id) => setModal({ type: "delete", id })}
+              />
             )}
             {page === "movimentos" && (
               <History
@@ -926,176 +670,82 @@ export default function Ledger({
                 remove={(id) => setModal({ type: "delete", id })}
               />
             )}
-            {page === "objetivos" && (
-              <>
-                <div className="section-heading">
-                  <h2>Os teus próximos passos</h2>
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      setModal({ type: "category", kind: "saving" })
-                    }
-                  >
-                    <Plus size={17} /> Novo objetivo
-                  </Button>
-                </div>
-                <div className="goals-grid">
-                  {state.categories
-                    .filter((c) => c.goal > 0)
-                    .map((c) => {
-                      const b = balance(state, c, month),
-                        pct = Math.round((b / c.goal) * 100);
-                      return (
-                        <button
-                          className="goal-card panel"
-                          key={c.id}
-                          onClick={() => go("categoria/" + c.id)}
-                        >
-                          <div className="between">
-                            <CatIcon c={c} />
-                            <span className="badge">
-                              {pct >= 100 ? "Concluído" : `${pct}% concluído`}
-                            </span>
-                          </div>
-                          <h2>{c.goalName || c.name}</h2>
-                          <p>{c.name}</p>
-                          <div className="goal-values">
-                            <strong>{money(b)}</strong>
-                            <span>de {money(c.goal)}</span>
-                          </div>
-                          <Bar
-                            value={pct}
-                            color={c.color}
-                            label={c.name + " " + pct + "% concluído"}
-                          />
-                          <div className="between goal-foot">
-                            <span>
-                              {pct >= 100
-                                ? "Chegaste ao teu objetivo!"
-                                : `Faltam ${money(c.goal - b)}`}
-                            </span>
-                            <ArrowUpRight size={18} />
-                          </div>
-                        </button>
-                      );
-                    })}
-                </div>
-                {!state.categories.some((c) => c.goal > 0) && (
-                  <Empty
-                    title="O próximo plano começa aqui."
-                    text="Adiciona um objetivo a uma categoria acumulativa."
-                  >
-                    <Button
-                      className="primary"
-                      onClick={() =>
-                        setModal({ type: "category", kind: "saving" })
-                      }
-                    >
-                      Criar objetivo
-                    </Button>
-                  </Empty>
-                )}
-              </>
-            )}
             {page === "definicoes" && (
-              <div className="settings-stack">
-                <section className="panel settings-panel">
-                  <h2>O teu rendimento</h2>
-                  <p>
-                    Valor recebido este mês e usado como rendimento habitual nos
-                    próximos meses.
-                  </p>
-                  <div className="setting-row">
-                    <div>
-                      <strong className="setting-money">
-                        {money(state.income)}
-                      </strong>
-                      <span> por mês</span>
-                    </div>
-                    <Button
-                      variant="outline"
-                      onClick={() => setModal({ type: "income" })}
-                    >
-                      <Pencil size={16} /> Alterar
-                    </Button>
-                  </div>
-                  <p className="helper">
-                    Confirma o valor recebido todos os meses. A Ledger não está
-                    ligada ao teu banco.
-                  </p>
-                </section>
-                <section className="panel settings-panel">
-                  <h2>Ao teu gosto</h2>
-                  <div className="setting-row">
-                    <div>
-                      <Moon size={19} />
-                      <span>
-                        <strong>Modo escuro</strong>
-                        <small>Mais conforto, de dia ou de noite.</small>
-                      </span>
-                    </div>
-                    <Switch
-                      checked={dark}
-                      onCheckedChange={toggleTheme}
-                      aria-label="Modo escuro"
-                    />
-                  </div>
-                  <div className="setting-row">
-                    <div>
-                      <Volume2 size={19} />
-                      <span>
-                        <strong>Sons subtis</strong>
-                        <small>Um pequeno toque ao clicar.</small>
-                      </span>
-                    </div>
-                    <Switch
-                      checked={sound}
-                      onCheckedChange={(v) => {
-                        setSound(v);
-                        localStorage.setItem("ledger-sound", v ? "on" : "off");
-                      }}
-                      aria-label="Sons subtis"
-                    />
+              <div className="home">
+                <section className="home-group">
+                  <div className="home-group-head"><h2>Orçamento</h2></div>
+                  <div className="home-list">
+                    <button className="set-row" onClick={() => setModal({ type: "income" })}>
+                      <span className="set-icon"><Wallet size={16} /></span>
+                      <span className="set-label">Rendimento mensal</span>
+                      <span className="set-value">{money(state.income)}</span>
+                      <ChevronRight size={16} className="set-chev" />
+                    </button>
+                    <button className="set-row" onClick={() => go("categorias")}>
+                      <span className="set-icon"><Layers3 size={16} /></span>
+                      <span className="set-label">Envelopes</span>
+                      <span className="set-value">{state.categories.length}</span>
+                      <ChevronRight size={16} className="set-chev" />
+                    </button>
                   </div>
                 </section>
-                <section className="panel settings-panel">
-                  <h2>Sempre à mão</h2>
-                  <p>Instala a Ledger no teu telemóvel ou computador.</p>
-                  {install ? (
-                    <Button
-                      variant="outline"
-                      onClick={async () => {
-                        await install.prompt();
-                        await install.userChoice;
-                        setInstall(null);
-                      }}
-                    >
-                      <Download size={17} /> Instalar Ledger
-                    </Button>
-                  ) : (
-                    <p className="helper">
-                      No menu do navegador, escolhe «Instalar aplicação» ou
-                      «Adicionar ao ecrã principal». É necessária ligação para
-                      aceder aos dados.
-                    </p>
-                  )}
+                <section className="home-group">
+                  <div className="home-group-head"><h2>Preferências</h2></div>
+                  <div className="home-list">
+                    <div className="set-row">
+                      <span className="set-icon"><Moon size={16} /></span>
+                      <span className="set-label">Modo escuro</span>
+                      <Switch checked={dark} onCheckedChange={toggleTheme} aria-label="Modo escuro" />
+                    </div>
+                    <div className="set-row">
+                      <span className="set-icon"><Volume2 size={16} /></span>
+                      <span className="set-label">Sons</span>
+                      <Switch
+                        checked={sound}
+                        onCheckedChange={(v) => {
+                          setSound(v);
+                          localStorage.setItem("ledger-sound", v ? "on" : "off");
+                        }}
+                        aria-label="Sons"
+                      />
+                    </div>
+                    {install && (
+                      <button
+                        className="set-row"
+                        onClick={async () => {
+                          await install.prompt();
+                          await install.userChoice;
+                          setInstall(null);
+                        }}
+                      >
+                        <span className="set-icon"><Download size={16} /></span>
+                        <span className="set-label">Instalar app</span>
+                        <ChevronRight size={16} className="set-chev" />
+                      </button>
+                    )}
+                  </div>
                 </section>
-                <section className="panel settings-panel">
-                  <h2>A tua conta</h2>
-                  <p>
-                    {demo
-                      ? "Estás numa demonstração. As alterações desaparecem ao recarregar."
-                      : user?.email}
-                  </p>
-                  <Button variant="outline" asChild>
-                    <a
-                      href={demo ? "/" : "/signout-with-chatgpt?return_to=%2F"}
-                      target="_top"
-                    >
-                      <LogOut size={16} />
-                      {demo ? "Sair da demonstração" : "Terminar sessão"}
-                    </a>
-                  </Button>
+                <section className="home-group">
+                  <div className="home-group-head"><h2>Conta</h2></div>
+                  <div className="home-list">
+                    {demo ? (
+                      <a className="set-row" href="/login?modo=criar">
+                        <span className="set-icon"><LogOut size={16} /></span>
+                        <span className="set-label">Criar conta</span>
+                        <ChevronRight size={16} className="set-chev" />
+                      </a>
+                    ) : (
+                      <>
+                        <div className="set-row">
+                          <span className="set-label muted">{user?.email}</span>
+                        </div>
+                        <button className="set-row danger" onClick={signOut}>
+                          <span className="set-icon"><LogOut size={16} /></span>
+                          <span className="set-label">Terminar sessão</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </section>
               </div>
             )}
@@ -1104,13 +754,27 @@ export default function Ledger({
                 <Button onClick={() => go("dashboard")}>Dashboard</Button>
               </Empty>
             )}
-            <footer className="app-footer">
-              <span>Um lugar para cada euro.</span>
-              <span>ledger.</span>
-            </footer>
           </main>
           <nav className="mobile-nav" aria-label="Navegação principal">
-            {nav.map(([id, label, Icon]) => (
+            {nav.slice(0, 2).map(([id, label, Icon]) => (
+              <button
+                key={id}
+                aria-current={page === id ? "page" : undefined}
+                onClick={() => go(id)}
+                className={page === id ? "active" : ""}
+              >
+                <Icon size={21} />
+                <span>{label}</span>
+              </button>
+            ))}
+            <button
+              className="mobile-nav-fab"
+              aria-label="Novo movimento"
+              onClick={() => openMove("expense")}
+            >
+              <Plus size={22} />
+            </button>
+            {nav.slice(2).map(([id, label, Icon]) => (
               <button
                 key={id}
                 aria-current={page === id ? "page" : undefined}
@@ -1124,15 +788,16 @@ export default function Ledger({
           </nav>
         </div>
       </div>
-      <Dialog
+      <Drawer
+        direction="bottom"
         open={!!modal && modal.type !== "delete"}
         onOpenChange={(open) => {
           if (!open) setModal(null);
         }}
       >
         {modal && modal.type !== "delete" && (
-          <DialogContent className="ledger-dialog">
-            <DialogTitle>
+          <DrawerContent className="ledger-drawer">
+            <DrawerTitle>
               {modal?.type === "movement"
                 ? "Novo movimento"
                 : modal?.type === "income"
@@ -1140,14 +805,14 @@ export default function Ledger({
                   : modal?.id
                     ? "Editar categoria"
                     : "Novo envelope"}
-            </DialogTitle>
-            <DialogDescription>
+            </DrawerTitle>
+            <DrawerDescription>
               {modal?.type === "movement"
                 ? "Um pequeno registo. Tudo no lugar."
                 : modal?.type === "income"
                   ? "Define quanto recebeste este mês."
                   : "Dá um destino ao teu dinheiro."}
-            </DialogDescription>
+            </DrawerDescription>
             {modal?.type === "movement" && (
               <MovementForm
                 key={modal.id + String(modal.kind)}
@@ -1174,9 +839,9 @@ export default function Ledger({
                 done={() => setModal(null)}
               />
             )}
-          </DialogContent>
+          </DrawerContent>
         )}
-      </Dialog>
+      </Drawer>
       <AlertDialog
         open={modal?.type === "delete"}
         onOpenChange={(o) => {
@@ -1213,46 +878,358 @@ export default function Ledger({
     </SidebarProvider>
   );
 }
-function Distribution({
+function spentIn(s: LedgerState, c: Category, m: string) {
+  return s.movements
+    .filter(
+      (t) =>
+        t.category === c.id && t.type === "expense" && t.date.startsWith(m),
+    )
+    .reduce((a, t) => a + t.amount, 0);
+}
+function MonthSwitch({
   state,
   month,
-  edit,
+  setMonth,
+  compact = false,
 }: {
   state: LedgerState;
   month: string;
-  edit: () => void;
+  setMonth: (m: string) => void;
+  compact?: boolean;
 }) {
-  const s = summary(state, month),
-    mm = state.months[month];
+  const ms = Object.keys(state.months).sort();
+  const i = ms.indexOf(month);
+  const full = monthName(month);
+  const label = compact
+    ? full.charAt(0).toUpperCase() + full.slice(1, 3) + " " + month.slice(0, 4)
+    : full;
   return (
-    <section className="distribution">
-      <div className="distribution-main">
-        <span className="distribution-icon">
-          <Check size={19} />
-        </span>
-        <div>
-          <strong>
-            {s.free === 0
-              ? "Cada euro tem o seu lugar."
-              : s.free < 0
-                ? "A distribuição precisa de um ajuste."
-                : `${money(s.free)} à espera de um destino.`}
-          </strong>
-          <p>
-            {money(mm?.income || 0)} de rendimento <span>·</span>{" "}
-            {money(s.distributed)} distribuídos{" "}
-            {mm?.carry > 0 && (
-              <>
-                <span>·</span> {money(mm.carry)} transitados
-              </>
-            )}
-          </p>
+    <div className={"home-month" + (compact ? " compact" : "")}>
+      <button
+        aria-label="Mês anterior"
+        disabled={i <= 0}
+        onClick={() => setMonth(ms[i - 1])}
+      >
+        <ArrowLeft size={compact ? 14 : 16} />
+      </button>
+      <span>{label}</span>
+      <button
+        aria-label="Mês seguinte"
+        disabled={i >= ms.length - 1}
+        onClick={() => setMonth(ms[i + 1])}
+      >
+        <ArrowRight size={compact ? 14 : 16} />
+      </button>
+    </div>
+  );
+}
+function UnassignedAlert({
+  amount,
+  onClick,
+}: {
+  amount: number;
+  onClick: () => void;
+}) {
+  if (amount === 0) return null;
+  return (
+    <button
+      className={"home-alert" + (amount < 0 ? " over" : "")}
+      onClick={onClick}
+    >
+      <span>
+        <strong>{money(Math.abs(amount))}</strong>
+        {amount > 0 ? " por distribuir" : " distribuídos a mais"}
+      </span>
+      <ChevronRight size={18} />
+    </button>
+  );
+}
+function EnvelopesView({
+  state,
+  month,
+  unassigned,
+  go,
+  distribute,
+  create,
+}: {
+  state: LedgerState;
+  month: string;
+  unassigned: number;
+  go: (p: string) => void;
+  distribute: () => void;
+  create: () => void;
+}) {
+  const monthly = state.categories.filter((c) => c.kind === "monthly");
+  const savings = state.categories.filter((c) => c.kind === "saving");
+  const budget = monthly.reduce(
+    (a, c) => a + (state.months[month]?.allocations[c.id] || 0),
+    0,
+  );
+  const spent = monthly.reduce((a, c) => a + spentIn(state, c, month), 0);
+  const pct = budget > 0 ? Math.round((spent / budget) * 100) : 0;
+  return (
+    <div className="home">
+      <section className="home-hero">
+        <div className="env-summary-top">
+          <span className="home-label">Orçamento mensal</span>
+          {budget > 0 && (
+            <span className={"env-summary-pct" + (pct > 100 ? " neg" : "")}>
+              {pct}% usado
+            </span>
+          )}
         </div>
+        <div className="env-summary-amount">
+          <strong>{money(Math.max(0, budget - spent))}</strong>
+          <span>restam de {money(budget)}</span>
+        </div>
+        {budget > 0 && (
+          <div className="home-mini-bar big">
+            <i
+              className={pct > 100 ? "over" : ""}
+              style={{ width: Math.min(100, pct) + "%" }}
+            />
+          </div>
+        )}
+      </section>
+      <UnassignedAlert amount={unassigned} onClick={distribute} />
+      {monthly.length > 0 && (
+        <EnvelopeGroup title="Mensal" cats={monthly} state={state} month={month} go={go} />
+      )}
+      {savings.length > 0 && (
+        <EnvelopeGroup title="Poupanças" cats={savings} state={state} month={month} go={go} />
+      )}
+      <button className="env-new" onClick={create}>
+        <Plus size={16} /> Novo envelope
+      </button>
+    </div>
+  );
+}
+function CategoryView({
+  state,
+  c,
+  month,
+  setMonth,
+  movements,
+  back,
+  edit,
+  move,
+  remove,
+}: {
+  state: LedgerState;
+  c: Category;
+  month: string;
+  setMonth: (m: string) => void;
+  movements: Movement[];
+  back: () => void;
+  edit: () => void;
+  move: (kind: string) => void;
+  remove: (id: string) => void;
+}) {
+  const b = balance(state, c, month);
+  const alloc = state.months[month]?.allocations[c.id] || 0;
+  const spent = spentIn(state, c, month);
+  const monthly = c.kind === "monthly";
+  const target = monthly ? alloc : c.goal;
+  const pct = target > 0 ? ((monthly ? spent : b) / target) * 100 : 0;
+  return (
+    <div className="home" style={{ "--cat": c.color } as CSSProperties}>
+      <div className="cat-head">
+        <button className="icon-btn" aria-label="Voltar" onClick={back}>
+          <ArrowLeft size={18} />
+        </button>
+        <MonthSwitch state={state} month={month} setMonth={setMonth} compact />
+        <button className="icon-btn" aria-label="Editar envelope" onClick={edit}>
+          <Pencil size={16} />
+        </button>
       </div>
-      <Button variant="ghost" onClick={edit}>
-        {s.free === 0 ? "Ver distribuição" : "Ajustar distribuição"}
-        <ArrowRight size={16} />
-      </Button>
+      <section className="home-hero cat-hero">
+        <CatIcon c={c} />
+        <span className="home-label">{c.name}</span>
+        <strong className={"home-total" + (b < 0 ? " neg" : "")}>{money(b)}</strong>
+        {target > 0 && (
+          <>
+            <div className="home-mini-bar big cat-bar">
+              <i
+                className={pct > 100 || b < 0 ? "over" : ""}
+                style={{ width: Math.min(100, Math.max(2, pct)) + "%" }}
+              />
+            </div>
+            <span className="home-label">
+              {monthly
+                ? "Gasto " + money(spent) + " de " + money(alloc)
+                : Math.round(pct) +
+                  "% de " +
+                  money(c.goal) +
+                  (c.goalName ? " · " + c.goalName : "")}
+            </span>
+          </>
+        )}
+      </section>
+      <div className="cat-actions">
+        <button onClick={() => move("expense")}>
+          <ArrowUpRight size={18} />
+          Despesa
+        </button>
+        <button onClick={() => move("income")}>
+          <ArrowDownLeft size={18} />
+          Adicionar
+        </button>
+        <button onClick={() => move("transfer")}>
+          <ArrowLeftRight size={18} />
+          Transferir
+        </button>
+      </div>
+      <section className="home-group">
+        <div className="home-group-head"><h2>Movimentos</h2></div>
+        <div className="home-list">
+          <MovementList state={state} movements={movements} remove={remove} />
+        </div>
+      </section>
+    </div>
+  );
+}
+function HomeView({
+  state,
+  month,
+  available,
+  unassigned,
+  recent,
+  go,
+  distribute,
+}: {
+  state: LedgerState;
+  month: string;
+  available: number;
+  unassigned: number;
+  recent: Movement[];
+  go: (p: string) => void;
+  distribute: () => void;
+}) {
+  const monthly = state.categories.filter((c) => c.kind === "monthly");
+  const savings = state.categories.filter((c) => c.kind === "saving");
+  const sumBal = (cs: Category[]) =>
+    cs.reduce((a, c) => a + balance(state, c, month), 0);
+  const spendable = sumBal(monthly);
+  const saved = sumBal(savings);
+  const budget = monthly.reduce(
+    (a, c) => a + (state.months[month]?.allocations[c.id] || 0),
+    0,
+  );
+  const spent = monthly.reduce((a, c) => a + spentIn(state, c, month), 0);
+  const spentPct = budget > 0 ? (spent / budget) * 100 : 0;
+  return (
+    <div className="home">
+      <section className="home-hero">
+        <span className="home-label">Saldo total</span>
+        <strong className="home-total">{money(available)}</strong>
+        <div className="home-split">
+          <div>
+            <span className="home-label">Para gastar</span>
+            <strong className={spendable < 0 ? "neg" : ""}>
+              {money(spendable)}
+            </strong>
+            {budget > 0 && (
+              <div className="home-mini-bar">
+                <i style={{ width: Math.min(100, Math.max(0, spentPct)) + "%" }} />
+              </div>
+            )}
+          </div>
+          <div>
+            <span className="home-label">Poupado</span>
+            <strong className="pos">{money(saved)}</strong>
+          </div>
+        </div>
+      </section>
+      <UnassignedAlert amount={unassigned} onClick={distribute} />
+      {monthly.length > 0 && (
+        <EnvelopeGroup title="Mensal" cats={monthly} state={state} month={month} go={go} />
+      )}
+      {savings.length > 0 && (
+        <EnvelopeGroup title="Poupanças" cats={savings} state={state} month={month} go={go} />
+      )}
+      <section className="home-group">
+        <div className="home-group-head">
+          <h2>Recentes</h2>
+          <button onClick={() => go("movimentos")}>Ver tudo</button>
+        </div>
+        <div className="home-list">
+          <MovementList state={state} movements={recent} />
+        </div>
+      </section>
+    </div>
+  );
+}
+function EnvelopeGroup({
+  title,
+  cats,
+  state,
+  month,
+  go,
+}: {
+  title: string;
+  cats: Category[];
+  state: LedgerState;
+  month: string;
+  go: (p: string) => void;
+}) {
+  return (
+    <section className="home-group">
+      <div className="home-group-head">
+        <h2>{title}</h2>
+      </div>
+      <div className="home-list">
+        {cats.map((c) => {
+          const b = balance(state, c, month);
+          const alloc = state.months[month]?.allocations[c.id] || 0;
+          const spent = spentIn(state, c, month);
+          const monthly = c.kind === "monthly";
+          const pct = monthly
+            ? alloc > 0
+              ? (spent / alloc) * 100
+              : 0
+            : c.goal > 0
+              ? (b / c.goal) * 100
+              : 0;
+          const showBar = monthly ? alloc > 0 : c.goal > 0;
+          const sub = monthly
+            ? b < 0
+              ? "Excedido em " + money(-b)
+              : alloc > 0
+                ? "Gasto " + money(spent) + " de " + money(alloc)
+                : "Gasto " + money(spent)
+            : c.goal > 0
+              ? Math.round((b / c.goal) * 100) +
+                "% de " +
+                money(c.goal) +
+                (c.goalName ? " · " + c.goalName : "")
+              : "Sem meta";
+          return (
+            <button
+              key={c.id}
+              className="env-row"
+              onClick={() => go("categoria/" + c.id)}
+              style={{ "--cat": c.color } as CSSProperties}
+            >
+              <CatIcon c={c} small />
+              <div className="env-row-body">
+                <div className="env-row-top">
+                  <span className="env-row-name">{c.name}</span>
+                  <strong className={b < 0 ? "neg" : ""}>{money(b)}</strong>
+                </div>
+                {showBar && (
+                  <div className="env-row-bar">
+                    <i
+                      className={b < 0 || pct > 100 ? "over" : ""}
+                      style={{ width: Math.min(100, Math.max(2, pct)) + "%" }}
+                    />
+                  </div>
+                )}
+                <span className={"env-row-sub" + (b < 0 ? " neg" : "")}>{sub}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -1260,10 +1237,12 @@ function MovementList({
   state,
   movements,
   remove,
+  hideDate = false,
 }: {
   state: LedgerState;
   movements: Movement[];
   remove?: (id: string) => void;
+  hideDate?: boolean;
 }) {
   if (!movements.length)
     return (
@@ -1282,33 +1261,30 @@ function MovementList({
             <CatIcon c={c} small />
             <div className="movement-name">
               <strong>
-                {t.description ||
-                  (t.type === "expense"
-                    ? "Despesa"
-                    : t.type === "transfer"
-                      ? "Transferência"
-                      : t.type === "allocation"
-                        ? "Distribuição"
-                        : "Entrada")}
+                {t.description || c.name + (dest ? " → " + dest.name : "")}
               </strong>
               <span>
-                {c.name}
-                {dest ? " → " + dest.name : ""}
-                {t.type === "allocation" ? " · Por distribuir" : ""}
+                {[
+                  hideDate
+                    ? ""
+                    : new Intl.DateTimeFormat("pt-PT", {
+                        day: "numeric",
+                        month: "short",
+                      }).format(new Date(t.date + "T12:00:00")),
+                  t.description ? c.name + (dest ? " → " + dest.name : "") : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
             </div>
-            <time dateTime={t.date}>
-              {new Intl.DateTimeFormat("pt-PT", {
-                day: "numeric",
-                month: "short",
-              }).format(new Date(t.date + "T12:00:00"))}
-            </time>
             <strong
               className={
                 "movement-amount " +
                 (t.type === "income" || t.type === "allocation"
                   ? "positive"
-                  : "")
+                  : t.type === "expense"
+                    ? "negative"
+                    : "")
               }
             >
               {t.type === "transfer"
@@ -1343,43 +1319,77 @@ function History({
   movements: Movement[];
   remove: (id: string) => void;
 }) {
-  const [category, setCategory] = useState("all"),
+  const [query, setQuery] = useState(""),
     [type, setType] = useState("all");
-  const filtered = movements.filter(
-    (t) =>
-      (category === "all" || t.category === category || t.to === category) &&
-      (type === "all" || t.type === type),
+  const q = query.trim().toLowerCase();
+  const filtered = movements.filter((t) => {
+    if (type !== "all" && t.type !== type) return false;
+    if (!q) return true;
+    const c = state.categories.find((c) => c.id === t.category);
+    return (
+      t.description.toLowerCase().includes(q) ||
+      !!c?.name.toLowerCase().includes(q)
+    );
+  });
+  const days = filtered.reduce<{ date: string; items: Movement[] }[]>(
+    (acc, t) => {
+      const last = acc.at(-1);
+      return last && last.date === t.date
+        ? [...acc.slice(0, -1), { date: last.date, items: [...last.items, t] }]
+        : [...acc, { date: t.date, items: [t] }];
+    },
+    [],
   );
+  const types: [string, string][] = [
+    ["all", "Todos"],
+    ["expense", "Despesas"],
+    ["income", "Entradas"],
+    ["transfer", "Transferências"],
+  ];
   return (
-    <section className="panel history-panel">
-      <div className="filters">
-        <Select
-          aria-label="Filtrar por categoria"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-        >
-          <option value="all">Todas as categorias</option>
-          {state.categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          aria-label="Filtrar por tipo"
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-        >
-          <option value="all">Todos os movimentos</option>
-          <option value="expense">Despesas</option>
-          <option value="income">Entradas</option>
-          <option value="transfer">Transferências</option>
-          <option value="allocation">Distribuições</option>
-        </Select>
-        <span>{filtered.length} movimentos</span>
+    <div className="home">
+      <label className="rec-search">
+        <Search size={16} />
+        <input
+          placeholder="Pesquisar"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </label>
+      <div className="rec-chips">
+        {types.map(([id, label]) => (
+          <button
+            key={id}
+            className={type === id ? "active" : ""}
+            onClick={() => setType(id)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
-      <MovementList state={state} movements={filtered} remove={remove} />
-    </section>
+      {days.length === 0 ? (
+        <div className="home-list">
+          <MovementList state={state} movements={[]} />
+        </div>
+      ) : (
+        days.map((d) => (
+          <section className="home-group" key={d.date}>
+            <div className="home-group-head">
+              <h2>
+                {new Intl.DateTimeFormat("pt-PT", {
+                  weekday: "short",
+                  day: "numeric",
+                  month: "long",
+                }).format(new Date(d.date + "T12:00:00"))}
+              </h2>
+            </div>
+            <div className="home-list">
+              <MovementList state={state} movements={d.items} remove={remove} hideDate />
+            </div>
+          </section>
+        ))
+      )}
+    </div>
   );
 }
 type Save = (data: any) => Promise<void>;

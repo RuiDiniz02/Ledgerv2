@@ -1,4 +1,4 @@
-const CACHE = "ledger-shell-v1";
+const CACHE = "ledger-shell-v2";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -33,7 +33,7 @@ self.addEventListener("fetch", (event) => {
   if (
     event.request.method !== "GET" ||
     url.origin !== self.location.origin ||
-    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/") || url.pathname === "/recuperar" ||
     url.pathname.includes("chatgpt") ||
     url.pathname === "/callback"
   )

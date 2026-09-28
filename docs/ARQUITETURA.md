@@ -2,9 +2,9 @@
 
 ## Aplicação e páginas
 
-React e TypeScript, com Vinext e convenções App Router. A pasta `app` contém a interface e a API; `lib/ledger.ts` centraliza as regras do dinheiro. Cloudflare Worker executa o servidor e D1 mantém os dados. A autenticação usa «Entrar com ChatGPT», fornecida pela plataforma Sites. Cada consulta e escrita verifica a identidade no servidor.
+React e TypeScript, com Vinext e convenções App Router. A pasta `app` contém a interface e a API; `lib/ledger.ts` centraliza as regras do dinheiro. Cloudflare Worker `ledger` executa o servidor. Supabase Auth gere contas por email e palavra-passe; Supabase Postgres mantém os dados. Cada consulta e escrita valida o bearer token com `auth.getUser()` no servidor. O cliente da base de dados usa a identidade do utilizador e a chave pública, nunca uma chave de serviço. RLS restringe leitura, criação e atualização ao proprietário do registo.
 
-Áreas: Dashboard; Categorias e detalhe; Movimentos; Objetivos; Definições. Navegação por fragmentos de URL, compatível com voltar/avançar no navegador. `/` apresenta entrada ou a conta autenticada. `/demo` é uma demonstração explicitamente identificada, só em memória, com dados fictícios.
+Áreas: Dashboard; Categorias e detalhe; Movimentos; Objetivos; Definições. Navegação por fragmentos de URL, compatível com voltar/avançar no navegador. `/` encaminha para `/conta`, que exige sessão e envia visitantes para `/login`. `/login` reúne entrar, criar conta e pedir recuperação. `/auth/confirm` confirma o email e `/recuperar` permite definir uma nova palavra-passe a partir do link de recuperação. `/demo` é uma demonstração explicitamente identificada, só em memória, com dados fictícios.
 
 Componentes: cartões de envelopes, resumo mensal, distribuição, lista de movimentos, formulário único de movimentos, editor de categoria, formulário de rendimento e onboarding em três passos. Primitivas acessíveis Shadcn/Radix para diálogo, confirmação, tabs, progresso, navegação, inputs e switches.
 
@@ -19,11 +19,11 @@ O documento contém:
 - Meses: rendimento recebido, dinheiro transitado e distribuição por categoria.
 - Movimentos: id, tipo, cêntimos, categoria, destino de transferência, descrição e data.
 
-Os valores são inteiros em cêntimos. A identidade nunca vem do corpo do pedido. Uma atualização atómica guarda o estado inteiro apenas se a revisão corresponder à lida. Conflitos são devolvidos com 409, os dados são atualizados e os campos permanecem para o utilizador rever antes de guardar novamente. Isto impede transferências parciais e alterações concorrentes perdidas. O documento tem um limite de 800 mil caracteres; numa evolução para contas com grande histórico, as entidades deverão ser normalizadas.
+Os valores são inteiros em cêntimos. A identidade nunca vem do corpo do pedido. Uma atualização atómica guarda o estado inteiro apenas se a revisão corresponder à lida. Conflitos são devolvidos com 409, os dados são atualizados e os campos permanecem para o utilizador rever antes de guardar novamente. Isto impede transferências parciais e alterações concorrentes perdidas. A API limita o documento a 800 mil caracteres e a base de dados aplica também um limite de 1,5 MB; numa evolução para contas com grande histórico, as entidades deverão ser normalizadas.
 
 ## Fluxo principal
 
-Entrar → rendimento mensal → categorias e valores → confirmar → Dashboard → + Movimento → valor, categoria, tipo, descrição opcional e data → guardar.
+Criar conta → confirmar email → entrar → rendimento mensal → categorias e valores → confirmar → Dashboard → + Movimento → valor, categoria, tipo, descrição opcional e data → guardar.
 
 ## Regras do dinheiro
 
@@ -37,6 +37,14 @@ Alterar orçamento ou rendimento afeta o mês atual e o valor habitual futuro. M
 
 ## PWA, acessibilidade e privacidade
 
-Manifesto, ícones, instalação quando suportada pelo navegador, service worker e página offline. Dados financeiros e respostas autenticadas não são colocados na cache offline. Consultar e guardar dados requer internet. Apenas tema e preferência de sons são guardados no dispositivo.
+Manifesto, ícones, instalação quando suportada pelo navegador, service worker e página offline. Dados financeiros e respostas autenticadas não são colocados na cache offline. Consultar e guardar dados requer internet. O tema, a preferência de sons e a sessão do Supabase são guardados no dispositivo. Os dados financeiros ficam no Supabase e não são persistidos no navegador.
 
 Modo escuro, foco visível, diálogos com foco controlado, labels, navegação por teclado, feedback de erro e sucesso, preferência de movimento reduzido. Sem analytics, bancos, recomendações financeiras ou serviços externos de imagem.
+
+## Autenticação e publicação
+
+O browser mantém um único cliente Supabase, renova a sessão e acompanha o logout. Os links de email usam PKCE e devem abrir no navegador onde o pedido começou; os callbacks também suportam `token_hash` para templates personalizados. Tokens são removidos do URL após a troca. A API verifica o utilizador independentemente do estado apresentado pela interface. Escritas com revisão desatualizada devolvem 409.
+
+Produção: https://ledger.dontspop.workers.dev. O comando `npm run deploy` constrói e publica o Worker existente. A migração em `supabase/migrations` cria `ledger_accounts`, constraints e políticas RLS. Os ficheiros D1/Drizzle anteriores são históricos e não estão ligados ao Worker atual.
+
+A confirmação de email permanece ativa. Para aceitar registos públicos e enviar recuperação, configurar SMTP em Supabase → Authentication → Email → SMTP Settings. O serviço de email de teste atual limita destinatários. Não colocar a credencial SMTP no frontend ou no Git. Ver README para URLs de redirecionamento e validação.

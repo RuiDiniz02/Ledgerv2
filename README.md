@@ -1,27 +1,47 @@
 # Ledger
 
-Aplicação de finanças pessoais organizada em envelopes. Interface em português de Portugal, euros, tema claro/escuro e PWA.
+Finanças pessoais organizadas em envelopes. Português de Portugal, euros, tema claro/escuro e PWA.
+
+Produção: https://ledger.dontspop.workers.dev
 
 ## Desenvolvimento
 
-Requer Node.js 22.13 ou superior.
+Node.js 22.13 ou superior.
 
 ```sh
 npm ci
-npm run build
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_nebulous_darkhawk.sql
 npm run dev
 ```
 
-Aplica a migração apenas uma vez por base de dados local. O servidor imprime o endereço de acesso. Em desenvolvimento no loopback, «Entrar com ChatGPT» usa a identidade local simulada pelo starter. Na versão alojada, a autenticação é real e fornecida pela plataforma. `/demo` contém exemplos fictícios e não guarda alterações.
+Cloudflare executa a aplicação; Supabase fornece autenticação e base de dados. A configuração pública fica em `lib/supabase-config.ts`. Nenhuma chave de serviço é necessária. O ambiente local usa o mesmo projeto Supabase: usar uma conta exclusiva de testes, nunca dados reais para os testes automatizados. `/demo` tem dados fictícios apenas em memória.
+
+## Autenticação
+
+Login, registo com confirmação por email, reenvio da confirmação, recuperação e logout estão implementados. No Supabase, configurar:
+
+- Site URL: `https://ledger.dontspop.workers.dev`
+- Redirect URLs: `https://ledger.dontspop.workers.dev`, `https://ledger.dontspop.workers.dev/auth/confirm` e `https://ledger.dontspop.workers.dev/recuperar`.
+- Para desenvolvimento com emails, adicionar explicitamente os callbacks correspondentes do localhost.
+- SMTP próprio em Authentication → Email → SMTP Settings, com remetente/domínio verificado. A credencial fica exclusivamente no Supabase.
+
+**Pendente operacional:** o Supabase ainda usa o serviço de envio de teste, limitado a destinatários autorizados. O registo público e a recuperação por email precisam do SMTP. A confirmação de email permanece ativa. Os links PKCE devem abrir no mesmo navegador onde foram pedidos. Os [passos de configuração e templates](docs/EMAIL.md) estão preparados para ativação.
+
+A migração `supabase/migrations/20260921214258_ledger_accounts.sql` já foi aplicada ao projeto Ledger. Cada conta só pode ler e alterar os seus dados por políticas RLS. A antiga base D1 estava vazia e deixou de ser usada.
+
+## Verificar e publicar
 
 ```sh
-node --experimental-strip-types --test tests/ledger.test.ts
-npx tsc --noEmit
-npm run build
+npm run typecheck
+npm test
+npm run test:api
+npm run deploy
 ```
 
-A [arquitetura](docs/ARQUITETURA.md) descreve páginas, componentes, modelo de dados e regras. O MVP precisa de internet para ler/gravar dados. A PWA apresenta uma página informativa sem ligação.
+`test:api` verifica por defeito rejeição de pedidos sem sessão ou com token inválido em localhost:5173. Opcionalmente definir `LEDGER_TEST_BASE_URL`. Para testar persistência e concorrência, definir `LEDGER_TEST_EMAIL` e `LEDGER_TEST_PASSWORD` no ambiente com uma conta dedicada já configurada e pelo menos duas categorias. O teste acrescenta e remove movimentos próprios e nunca deve correr numa conta pessoal. Não guardar credenciais no repositório. Sem estas variáveis, o teste autenticado é explicitamente omitido.
+
+O deploy requer Wrangler autenticado na conta Cloudflare e atualiza o Worker `ledger`. O endereço antigo Sites é histórico; não faz parte deste deploy.
+
+A [arquitetura](docs/ARQUITETURA.md) documenta páginas, componentes, modelo e regras. A PWA precisa de internet para consultar/gravar; dados privados não entram na cache offline.
 
 ## Funcionalidades
 
@@ -31,5 +51,4 @@ A [arquitetura](docs/ARQUITETURA.md) descreve páginas, componentes, modelo de d
 - Objetivos, progresso e histórico com filtros.
 - Sobras mensais voltam a ficar por distribuir.
 - Autenticação, persistência por utilizador e controlo de concorrência.
-- Design responsivo, acessibilidade por teclado, modo escuro e sons opcionais.
-# Ledgerv2
+- Design responsivo, teclado, modo escuro e sons opcionais.
