@@ -46,6 +46,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect as Select } from "@/components/ui/native-select";
 import {
   Drawer,
+  DrawerClose,
   DrawerContent,
   DrawerTitle,
   DrawerDescription,
@@ -506,6 +507,11 @@ export default function Ledger({
         b.date.localeCompare(a.date) ||
         state.movements.indexOf(b) - state.movements.indexOf(a),
     );
+  const historyMovements = [...state.movements].sort(
+    (a, b) =>
+      b.date.localeCompare(a.date) ||
+      state.movements.indexOf(b) - state.movements.indexOf(a),
+  );
   return (
     <SidebarProvider style={{ "--sidebar-width": "238px" } as CSSProperties}>
       <div
@@ -590,6 +596,13 @@ export default function Ledger({
               <Brand />
             </div>
             <div className="topbar-right">
+              <Button
+                className="primary topbar-action"
+                onClick={() => openMove("expense")}
+              >
+                <Plus size={17} />
+                Nova despesa
+              </Button>
               {demo && (
                 <a className="demo-badge" href="/login">
                   Demonstração <ArrowUpRight size={12} />
@@ -617,7 +630,7 @@ export default function Ledger({
               page === "definicoes") && (
               <div className="app-head">
                 <h1>{title}</h1>
-                {page !== "definicoes" && (
+                {page === "categorias" && (
                   <MonthSwitch
                     state={state}
                     month={month}
@@ -666,7 +679,7 @@ export default function Ledger({
             {page === "movimentos" && (
               <History
                 state={state}
-                movements={recent}
+                movements={historyMovements}
                 remove={(id) => setModal({ type: "delete", id })}
               />
             )}
@@ -755,7 +768,10 @@ export default function Ledger({
               </Empty>
             )}
           </main>
-          <nav className="mobile-nav" aria-label="Navegação principal">
+          <nav
+            className={"mobile-nav" + (modal ? " modal-open" : "")}
+            aria-label="Navegação principal"
+          >
             {nav.slice(0, 2).map(([id, label, Icon]) => (
               <button
                 key={id}
@@ -797,6 +813,15 @@ export default function Ledger({
       >
         {modal && modal.type !== "delete" && (
           <DrawerContent className="ledger-drawer">
+            <DrawerClose asChild>
+              <button
+                type="button"
+                className="ledger-drawer-close"
+                aria-label="Fechar janela"
+              >
+                <X size={18} />
+              </button>
+            </DrawerClose>
             <DrawerTitle>
               {modal?.type === "movement"
                 ? "Novo movimento"
@@ -1320,17 +1345,35 @@ function History({
   remove: (id: string) => void;
 }) {
   const [query, setQuery] = useState(""),
-    [type, setType] = useState("all");
+    [type, setType] = useState("all"),
+    [category, setCategory] = useState("all"),
+    [dateFrom, setDateFrom] = useState(""),
+    [dateTo, setDateTo] = useState("");
   const q = query.trim().toLowerCase();
   const filtered = movements.filter((t) => {
     if (type !== "all" && t.type !== type) return false;
+    if (category !== "all" && t.category !== category && t.to !== category)
+      return false;
+    if (dateFrom && t.date < dateFrom) return false;
+    if (dateTo && t.date > dateTo) return false;
     if (!q) return true;
     const c = state.categories.find((c) => c.id === t.category);
+    const destination = state.categories.find((c) => c.id === t.to);
     return (
       t.description.toLowerCase().includes(q) ||
-      !!c?.name.toLowerCase().includes(q)
+      !!c?.name.toLowerCase().includes(q) ||
+      !!destination?.name.toLowerCase().includes(q)
     );
   });
+  const hasFilters =
+    !!q || type !== "all" || category !== "all" || !!dateFrom || !!dateTo;
+  function clearFilters() {
+    setQuery("");
+    setType("all");
+    setCategory("all");
+    setDateFrom("");
+    setDateTo("");
+  }
   const days = filtered.reduce<{ date: string; items: Movement[] }[]>(
     (acc, t) => {
       const last = acc.at(-1);
@@ -1361,16 +1404,64 @@ function History({
           <button
             key={id}
             className={type === id ? "active" : ""}
+            aria-pressed={type === id}
             onClick={() => setType(id)}
           >
             {label}
           </button>
         ))}
       </div>
+      <div className="history-filters">
+        <label>
+          Categoria
+          <Select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            <option value="all">Todas as categorias</option>
+            {state.categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label>
+          Desde
+          <Input
+            type="date"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={(e) => setDateFrom(e.target.value)}
+          />
+        </label>
+        <label>
+          Até
+          <Input
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(e) => setDateTo(e.target.value)}
+          />
+        </label>
+      </div>
       {days.length === 0 ? (
-        <div className="home-list">
-          <MovementList state={state} movements={[]} />
-        </div>
+        hasFilters ? (
+          <div className="home-list">
+            <Empty
+              title="Sem resultados para estes filtros."
+              text="Altera os critérios ou limpa a pesquisa."
+            >
+              <Button variant="outline" onClick={clearFilters}>
+                Limpar filtros
+              </Button>
+            </Empty>
+          </div>
+        ) : (
+          <div className="home-list">
+            <MovementList state={state} movements={[]} />
+          </div>
+        )
       ) : (
         days.map((d) => (
           <section className="home-group" key={d.date}>
