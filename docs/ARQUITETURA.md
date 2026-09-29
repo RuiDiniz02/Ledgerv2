@@ -2,7 +2,7 @@
 
 ## Aplicação e páginas
 
-React e TypeScript, com Vinext e convenções App Router. A pasta `app` contém a interface e a API; `lib/ledger.ts` centraliza as regras do dinheiro. Cloudflare Worker `ledger` executa o servidor. Supabase Auth gere contas por email e palavra-passe; Supabase Postgres mantém os dados. Cada consulta e escrita valida o bearer token com `auth.getUser()` no servidor. O cliente da base de dados usa a identidade do utilizador e a chave pública, nunca uma chave de serviço. RLS restringe leitura, criação e atualização ao proprietário do registo.
+React e TypeScript, com Vinext e convenções App Router. A pasta `app` contém a interface e a API; `lib/ledger.ts` centraliza as regras do dinheiro. Cloudflare Worker `ledgerv2` executa o servidor. Supabase Auth gere contas por email e palavra-passe; Supabase Postgres mantém os dados. Cada consulta e escrita valida o bearer token com `auth.getUser()` no servidor. O cliente da base de dados usa a identidade do utilizador e a chave pública, nunca uma chave de serviço. RLS restringe leitura, criação e atualização ao proprietário do registo.
 
 Áreas: Dashboard; Categorias e detalhe; Movimentos; Objetivos; Definições. Navegação por fragmentos de URL, compatível com voltar/avançar no navegador. `/` encaminha para `/conta`, que exige sessão e envia visitantes para `/login`. `/login` reúne entrar, criar conta e pedir recuperação. `/auth/confirm` confirma o email e `/recuperar` permite definir uma nova palavra-passe a partir do link de recuperação. `/demo` é uma demonstração explicitamente identificada, só em memória, com dados fictícios.
 
@@ -45,6 +45,6 @@ Modo escuro, foco visível, diálogos com foco controlado, labels, navegação p
 
 O browser mantém um único cliente Supabase, renova a sessão e acompanha o logout. Os links de email usam PKCE e devem abrir no navegador onde o pedido começou; os callbacks também suportam `token_hash` para templates personalizados. Tokens são removidos do URL após a troca. A API verifica o utilizador independentemente do estado apresentado pela interface. Escritas com revisão desatualizada devolvem 409.
 
-Produção: https://ledger.dontspop.workers.dev. O comando `npm run deploy` constrói e publica o Worker existente. A migração em `supabase/migrations` cria `ledger_accounts`, constraints e políticas RLS. Os ficheiros D1/Drizzle anteriores são históricos e não estão ligados ao Worker atual.
+Produção: https://ledgerv2.dontspop.workers.dev. O comando `npm run deploy` constrói e publica o Worker existente. A migração em `supabase/migrations` cria `ledger_accounts`, constraints e políticas RLS. Os ficheiros D1/Drizzle anteriores são históricos e não estão ligados ao Worker atual.
 
 A confirmação de email permanece ativa. Para aceitar registos públicos e enviar recuperação, configurar SMTP em Supabase → Authentication → Email → SMTP Settings. O serviço de email de teste atual limita destinatários. Não colocar a credencial SMTP no frontend ou no Git. Ver README para URLs de redirecionamento e validação.

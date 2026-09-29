@@ -13,7 +13,7 @@ const managedLinux = readExecutionProfile() === "managed-linux";
 const localBindingConfig = {
   main: "vinext/server/fetch-handler",
   compatibility_flags: ["nodejs_compat"],
-  name: "ledger",
+  name: "ledgerv2",
   r2_buckets: r2
     ? [
         {
