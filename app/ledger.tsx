@@ -76,7 +76,6 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogCancel,
-  AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import {
   balance,
@@ -210,7 +209,8 @@ export default function Ledger({
     [dark, setDark] = useState(false),
     [sound, setSound] = useState(false),
     [install, setInstall] = useState<any>(null),
-    [offline, setOffline] = useState(false);
+    [offline, setOffline] = useState(false),
+    [resetting, setResetting] = useState(false);
   const audio = useRef<AudioContext | null>(null);
   const mainRef = useRef<HTMLElement>(null);
   async function load() {
@@ -365,9 +365,11 @@ export default function Ledger({
     setNotice(
       raw.action === "setup"
         ? "A tua Ledger está pronta."
-        : raw.action === "deleteMovement"
-          ? "Movimento eliminado."
-          : "Guardado. Tudo em dia.",
+        : raw.action === "reset"
+          ? "Orçamento reiniciado. A tua conta continua ativa."
+          : raw.action === "deleteMovement"
+            ? "Movimento eliminado."
+            : "Guardado. Tudo em dia.",
     );
   }
   const noticeView = (
@@ -756,6 +758,14 @@ export default function Ledger({
                           <span className="set-icon"><LogOut size={16} /></span>
                           <span className="set-label">Terminar sessão</span>
                         </button>
+                        <button
+                          className="set-row danger"
+                          onClick={() => setModal({ type: "reset" })}
+                        >
+                          <span className="set-icon"><Trash2 size={16} /></span>
+                          <span className="set-label">Recomeçar orçamento</span>
+                          <ChevronRight size={16} className="set-chev" />
+                        </button>
                       </>
                     )}
                   </div>
@@ -867,20 +877,43 @@ export default function Ledger({
         )}
       </Dialog>
       <AlertDialog
-        open={modal?.type === "delete"}
+        open={modal?.type === "delete" || modal?.type === "reset"}
         onOpenChange={(o) => {
           if (!o) setModal(null);
         }}
       >
         <AlertDialogContent>
-          <AlertDialogTitle>Eliminar este movimento?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {modal?.type === "reset"
+              ? "Recomeçar o teu orçamento?"
+              : "Eliminar este movimento?"}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            O saldo será recalculado. Esta ação não pode ser desfeita.
+            {modal?.type === "reset"
+              ? "Todos os movimentos, envelopes, rendimentos e histórico mensal serão apagados. A tua conta e sessão mantêm-se, mas terás de configurar o orçamento novamente. Esta ação não pode ser desfeita."
+              : "O saldo será recalculado. Esta ação não pode ser desfeita."}
           </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
+            <Button
+              disabled={resetting}
               onClick={async () => {
+                if (modal?.type === "reset") {
+                  setResetting(true);
+                  try {
+                    await save({ action: "reset" });
+                    setModal(null);
+                  } catch (e) {
+                    setNotice(
+                      e instanceof Error
+                        ? e.message
+                        : "Não foi possível reiniciar o orçamento.",
+                    );
+                  } finally {
+                    setResetting(false);
+                  }
+                  return;
+                }
                 try {
                   await save({ action: "deleteMovement", id: modal?.id });
                   setModal(null);
@@ -893,8 +926,12 @@ export default function Ledger({
                 }
               }}
             >
-              Eliminar movimento
-            </AlertDialogAction>
+              {modal?.type === "reset"
+                ? resetting
+                  ? "A reiniciar…"
+                  : "Apagar e recomeçar"
+                : "Eliminar movimento"}
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
