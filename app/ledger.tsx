@@ -45,12 +45,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect as Select } from "@/components/ui/native-select";
 import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerTitle,
-  DrawerDescription,
-} from "@/components/ui/drawer";
+  Dialog,
+  DialogClose,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { FormDialogContent } from "@/components/ledger/form-dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
@@ -804,25 +804,24 @@ export default function Ledger({
           </nav>
         </div>
       </div>
-      <Drawer
-        direction="bottom"
+      <Dialog
         open={!!modal && modal.type !== "delete"}
         onOpenChange={(open) => {
           if (!open) setModal(null);
         }}
       >
         {modal && modal.type !== "delete" && (
-          <DrawerContent className="ledger-drawer">
-            <DrawerClose asChild>
+          <FormDialogContent>
+            <DialogClose asChild>
               <button
                 type="button"
-                className="ledger-drawer-close"
+                className="ledger-dialog-close"
                 aria-label="Fechar janela"
               >
                 <X size={18} />
               </button>
-            </DrawerClose>
-            <DrawerTitle>
+            </DialogClose>
+            <DialogTitle>
               {modal?.type === "movement"
                 ? "Novo movimento"
                 : modal?.type === "income"
@@ -830,14 +829,14 @@ export default function Ledger({
                   : modal?.id
                     ? "Editar categoria"
                     : "Novo envelope"}
-            </DrawerTitle>
-            <DrawerDescription>
+            </DialogTitle>
+            <DialogDescription>
               {modal?.type === "movement"
                 ? "Um pequeno registo. Tudo no lugar."
                 : modal?.type === "income"
                   ? "Define quanto recebeste este mês."
                   : "Dá um destino ao teu dinheiro."}
-            </DrawerDescription>
+            </DialogDescription>
             {modal?.type === "movement" && (
               <MovementForm
                 key={modal.id + String(modal.kind)}
@@ -864,9 +863,9 @@ export default function Ledger({
                 done={() => setModal(null)}
               />
             )}
-          </DrawerContent>
+          </FormDialogContent>
         )}
-      </Drawer>
+      </Dialog>
       <AlertDialog
         open={modal?.type === "delete"}
         onOpenChange={(o) => {
@@ -1552,7 +1551,6 @@ function MovementForm({
         Valor
         <div className="amount-input">
           <Input
-            autoFocus
             required
             inputMode="decimal"
             placeholder="0,00"
@@ -1935,8 +1933,7 @@ function Onboarding({ save }: { save: Save }) {
             Rendimento mensal (€)
             <div className="amount-input">
               <Input
-                autoFocus
-                inputMode="decimal"
+                    inputMode="decimal"
                 required
                 placeholder="1100"
                 value={income}

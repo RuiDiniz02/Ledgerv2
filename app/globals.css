@@ -3,6 +3,7 @@
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 @custom-variant dark (&:where(.dark, .dark *));
 :root {
+  color-scheme: light;
   --background: #fafafc;
   --foreground: #17171c;
   --card: #ffffff;
@@ -946,17 +947,25 @@ b {
   font-size: 14px;
   margin-bottom: 8px;
 }
-.ledger-drawer[data-vaul-drawer-direction="bottom"] {
-  bottom: 0;
-  max-height: min(88dvh, 760px);
+.ledger-dialog[data-slot="dialog-content"] {
+  top: calc(var(--form-viewport-top, 0px) + 12px);
+  left: 50%;
+  translate: -50% 0;
+  width: calc(100% - 24px);
+  max-width: 560px;
+  max-height: calc(var(--form-viewport-height, 100dvh) - 24px);
+  display: flex;
+  gap: 12px;
+  color: var(--foreground);
+  flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--card);
   border-top: 1px solid var(--border);
-  border-radius: 22px 22px 0 0;
-  padding: 8px 24px max(26px, env(safe-area-inset-bottom));
+  border-radius: 18px;
+  padding: 24px 20px max(24px, env(safe-area-inset-bottom));
 }
-.ledger-drawer-close {
+.ledger-dialog-close {
   position: absolute;
   top: 18px;
   right: 18px;
@@ -968,17 +977,18 @@ b {
   background: var(--muted);
   color: var(--muted-foreground);
 }
-.ledger-drawer [data-slot="drawer-title"] {
+.ledger-dialog [data-slot="dialog-title"] {
   font-size: 20px;
   letter-spacing: -0.4px;
   padding: 0 44px 0 4px;
 }
-.ledger-drawer [data-slot="drawer-description"] {
+.ledger-dialog [data-slot="dialog-description"] {
   font-size: 14px;
   padding: 0 4px;
   margin-bottom: 4px;
 }
-.ledger-drawer .ledger-form {
+.ledger-dialog .ledger-form {
+  flex-shrink: 0;
   padding: 0 4px;
 }
 .ledger-form {
@@ -1001,6 +1011,9 @@ b {
 .ledger-form input,
 .ledger-form select {
   height: 44px;
+  color: var(--foreground);
+  -webkit-text-fill-color: var(--foreground);
+  caret-color: var(--foreground);
   background: var(--card);
   border-radius: 8px;
   width: 100%;
@@ -2573,22 +2586,17 @@ b {
 .home-list .movement-row > [data-slot="button"]:hover { opacity: 1; color: var(--destructive); }
 
 @media (min-width: 768px) {
-  .ledger-drawer[data-vaul-drawer-direction="bottom"] {
-    top: 50%;
-    right: auto;
-    bottom: auto;
-    left: 50%;
+  .ledger-dialog[data-slot="dialog-content"] {
+    top: calc(var(--form-viewport-top, 0px) + var(--form-viewport-height, 100dvh) / 2);
+    translate: -50% -50%;
     width: min(560px, calc(100vw - 48px));
-    max-height: min(88dvh, 760px);
+    max-height: min(calc(var(--form-viewport-height, 100dvh) - 24px), 760px);
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 28px;
-    transform: translate(-50%, -50%);
-    margin-top: 0;
   }
-  .ledger-drawer > div:first-child { display: none; }
-  .ledger-drawer-close { top: 20px; right: 20px; }
-  .ledger-drawer [data-slot="drawer-title"] { padding-right: 48px; }
+  .ledger-dialog-close { top: 20px; right: 20px; }
+  .ledger-dialog [data-slot="dialog-title"] { padding-right: 48px; }
   .topbar-action { gap: 8px; }
 }
 @media (max-width: 767px) {
