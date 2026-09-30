@@ -99,6 +99,7 @@ test("renovação mensal preserva dinheiro, mantém acumulativas e liberta sobra
   rollMonths(n, "2026-10");
   assert.equal(balance(n, n.categories[1], "2026-10"), 17500);
   assert.equal(balance(n, n.categories[2], "2026-10"), 30000);
+  assert.equal(summary(n, "2026-10").spent, 0);
   assert.equal(free(n, "2026-10"), 30000);
   assert.equal(summary(n, "2026-10").available, 217500);
   const before = JSON.stringify(n);

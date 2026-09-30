@@ -20,6 +20,7 @@ O documento contém:
 - Movimentos: id, tipo, cêntimos, categoria, destino de transferência, descrição e data.
 
 Os valores são inteiros em cêntimos. A identidade nunca vem do corpo do pedido. Uma atualização atómica guarda o estado inteiro apenas se a revisão corresponder à lida. Conflitos são devolvidos com 409, os dados são atualizados e os campos permanecem para o utilizador rever antes de guardar novamente. Isto impede transferências parciais e alterações concorrentes perdidas. A API limita o documento a 800 mil caracteres e a base de dados aplica também um limite de 1,5 MB; numa evolução para contas com grande histórico, as entidades deverão ser normalizadas.
+Em Definições, «Recomeçar orçamento» apaga apenas o registo `ledger_accounts` do utilizador autenticado, com verificação da revisão, para voltar ao onboarding sem apagar a conta de acesso. A política RLS de eliminação limita a operação ao próprio registo.
 
 ## Fluxo principal
 

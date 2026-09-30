@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     const auth = await identify(request);
     if (!auth)
       return reply({ error: "A sessão terminou. Volta a entrar." }, 401);
-    let raw: any;
+    let raw: Record<string, unknown>;
     try {
       const body = await request.text();
       if (body.length > 24000)
@@ -79,7 +79,6 @@ export async function POST(request: Request) {
       .eq("user_id", user.id)
       .maybeSingle();
     if (readError) throw readError;
-    let state: LedgerState;
     const conflict = () =>
       reply(
         {
@@ -88,6 +87,22 @@ export async function POST(request: Request) {
         },
         409,
       );
+    if (raw.action === "reset") {
+      if (!row)
+        return reply({ error: "Configura primeiro a tua Ledger." }, 400);
+      if (raw.revision !== row.revision) return conflict();
+      const { data, error } = await db
+        .from("ledger_accounts")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("revision", row.revision)
+        .select("revision")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return conflict();
+      return reply({ state: null, revision: 0 });
+    }
+    let state: LedgerState;
     try {
       if (!row) {
         if (raw.action !== "setup")
