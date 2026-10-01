@@ -2647,3 +2647,15 @@ div.set-row { cursor: default; }
 .set-chev { color: var(--muted-foreground); }
 .set-row.danger { color: var(--destructive); }
 .set-row.danger .set-icon { background: color-mix(in srgb, var(--destructive) 14%, transparent); }
+
+/* Keep date ranges and paired form fields aligned at every width. */
+.history-filters label { align-content: start; }
+.history-filters input[type="date"] { display: block; box-sizing: border-box; max-width: 100%; }
+.ledger-form .form-columns { align-items: end; }
+.ledger-form .form-columns > label > span:first-child { min-height: 21px; }
+.home-alert { text-align: left; }
+.home-alert small { display: block; margin-top: 4px; color: var(--muted-foreground); font-weight: 400; }
+@media (max-width: 767px) {
+  .history-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .history-filters label:not(:first-child) { grid-column: auto; }
+}

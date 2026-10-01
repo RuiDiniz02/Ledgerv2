@@ -650,7 +650,7 @@ export default function Ledger({
                 unassigned={sum.free}
                 recent={recent.slice(0, 4)}
                 go={go}
-                distribute={() => setModal({ type: "income" })}
+                distribute={() => sum.free > 0 ? openMove("allocation") : setModal({ type: "income" })}
               />
             )}
             {page === "categorias" && (
@@ -659,7 +659,7 @@ export default function Ledger({
                 month={month}
                 unassigned={sum.free}
                 go={go}
-                distribute={() => setModal({ type: "income" })}
+                distribute={() => sum.free > 0 ? openMove("allocation") : setModal({ type: "income" })}
                 create={() => setModal({ type: "category" })}
               />
             )}
@@ -833,7 +833,7 @@ export default function Ledger({
             </DialogClose>
             <DialogTitle>
               {modal?.type === "movement"
-                ? "Novo movimento"
+                ? modal.kind === "allocation" ? "Distribuir dinheiro" : "Novo movimento"
                 : modal?.type === "income"
                   ? "O teu rendimento"
                   : modal?.id
@@ -842,7 +842,7 @@ export default function Ledger({
             </DialogTitle>
             <DialogDescription>
               {modal?.type === "movement"
-                ? "Um pequeno registo. Tudo no lugar."
+                ? modal.kind === "allocation" ? "Escolhe o envelope e o valor a distribuir." : "Um pequeno registo. Tudo no lugar."
                 : modal?.type === "income"
                   ? "Define quanto recebeste este mês."
                   : "Dá um destino ao teu dinheiro."}
@@ -1000,6 +1000,7 @@ function UnassignedAlert({
       <span>
         <strong>{money(Math.abs(amount))}</strong>
         {amount > 0 ? " por distribuir" : " distribuídos a mais"}
+        <small>{amount > 0 ? "Distribuir por um envelope" : "Rever rendimento e distribuição"}</small>
       </span>
       <ChevronRight size={18} />
     </button>
@@ -1022,36 +1023,8 @@ function EnvelopesView({
 }) {
   const monthly = state.categories.filter((c) => c.kind === "monthly");
   const savings = state.categories.filter((c) => c.kind === "saving");
-  const budget = monthly.reduce(
-    (a, c) => a + (state.months[month]?.allocations[c.id] || 0),
-    0,
-  );
-  const spent = monthly.reduce((a, c) => a + spentIn(state, c, month), 0);
-  const pct = budget > 0 ? Math.round((spent / budget) * 100) : 0;
   return (
     <div className="home">
-      <section className="home-hero">
-        <div className="env-summary-top">
-          <span className="home-label">Orçamento mensal</span>
-          {budget > 0 && (
-            <span className={"env-summary-pct" + (pct > 100 ? " neg" : "")}>
-              {pct}% usado
-            </span>
-          )}
-        </div>
-        <div className="env-summary-amount">
-          <strong>{money(Math.max(0, budget - spent))}</strong>
-          <span>restam de {money(budget)}</span>
-        </div>
-        {budget > 0 && (
-          <div className="home-mini-bar big">
-            <i
-              className={pct > 100 ? "over" : ""}
-              style={{ width: Math.min(100, pct) + "%" }}
-            />
-          </div>
-        )}
-      </section>
       <UnassignedAlert amount={unassigned} onClick={distribute} />
       {monthly.length > 0 && (
         <EnvelopeGroup title="Mensal" cats={monthly} state={state} month={month} go={go} />
@@ -1107,6 +1080,9 @@ function CategoryView({
         <CatIcon c={c} />
         <span className="home-label">{c.name}</span>
         <strong className={"home-total" + (b < 0 ? " neg" : "")}>{money(b)}</strong>
+        {!monthly && c.goalName && target === 0 && (
+          <span className="home-label">{c.goalName}</span>
+        )}
         {target > 0 && (
           <>
             <div className="home-mini-bar big cat-bar">
@@ -1183,6 +1159,7 @@ function HomeView({
       <section className="home-hero">
         <span className="home-label">Saldo total</span>
         <strong className="home-total">{money(available)}</strong>
+        <span className="home-label">Inclui o rendimento mensal previsto de {money(state.months[month]?.income || 0)}.</span>
         <div className="home-split">
           <div>
             <span className="home-label">Para gastar</span>
@@ -1263,7 +1240,7 @@ function EnvelopeGroup({
                 "% de " +
                 money(c.goal) +
                 (c.goalName ? " · " + c.goalName : "")
-              : "Sem meta";
+              : c.goalName || "Sem meta";
           return (
             <button
               key={c.id}
@@ -1533,7 +1510,7 @@ function MovementForm({
   save: Save;
   done: () => void;
 }) {
-  const [type, setType] = useState(kind),
+  const [type, setType] = useState(kind === "allocation" ? "income" : kind),
     [cat, setCat] = useState(categoryId || state.categories[0].id),
     [to, setTo] = useState(
       state.categories.find(
@@ -1543,7 +1520,7 @@ function MovementForm({
     [value, setValue] = useState(""),
     [description, setDescription] = useState(""),
     [date, setDate] = useState(today()),
-    [source, setSource] = useState("new"),
+    [source, setSource] = useState(kind === "allocation" ? "free" : "new"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const c = state.categories.find((c) => c.id === cat)!;
@@ -1649,7 +1626,7 @@ function MovementForm({
         </label>
       )}
       <label>
-        Descrição <span className="optional">opcional</span>
+        <span>Descrição <span className="optional">opcional</span></span>
         <Input
           maxLength={140}
           placeholder={
@@ -1768,7 +1745,7 @@ function CategoryForm({
       {type === "saving" && (
         <div className="form-columns">
           <label>
-            Objetivo (€) <span className="optional">opcional</span>
+            <span>Objetivo (€) <span className="optional">opcional</span></span>
             <Input
               inputMode="decimal"
               value={goal}
