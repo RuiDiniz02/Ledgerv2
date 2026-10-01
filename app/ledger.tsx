@@ -1444,6 +1444,7 @@ function History({
           <Input
             type="date"
             value={dateFrom}
+            data-empty={!dateFrom}
             max={dateTo || undefined}
             onChange={(e) => setDateFrom(e.target.value)}
           />
@@ -1453,6 +1454,7 @@ function History({
           <Input
             type="date"
             value={dateTo}
+            data-empty={!dateTo}
             min={dateFrom || undefined}
             onChange={(e) => setDateTo(e.target.value)}
           />

@@ -2555,8 +2555,8 @@ b {
 .rec-chips button.active { background: var(--primary); color: var(--primary-foreground); }
 .history-filters {
   display: grid;
-  grid-template-columns: minmax(150px, 1.3fr) repeat(2, minmax(125px, 1fr));
-  gap: 10px;
+  grid-template-columns: minmax(150px, 1.3fr) repeat(2, minmax(140px, 1fr));
+  gap: 16px;
   margin-top: -14px;
 }
 .history-filters label {
@@ -2658,4 +2658,22 @@ div.set-row { cursor: default; }
 @media (max-width: 767px) {
   .history-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .history-filters label:not(:first-child) { grid-column: auto; }
+}
+
+/* Hints stay visually distinct from entered values in both themes. */
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--muted-foreground) 65%, transparent);
+  opacity: 1;
+  font-weight: 400;
+}
+.history-filters input[type="date"] {
+  padding-inline: 12px;
+  font-weight: 400;
+}
+.history-filters input[type="date"][data-empty="true"] {
+  color: color-mix(in srgb, var(--muted-foreground) 65%, transparent);
+}
+@media (max-width: 420px) {
+  .history-filters { grid-template-columns: minmax(0, 1fr); }
 }
